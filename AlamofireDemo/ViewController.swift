@@ -7,6 +7,7 @@
 
 import UIKit
 import Alamofire
+import CommonCrypto
 
 class ViewController: UIViewController,
                       UITableViewDelegate,
@@ -23,6 +24,15 @@ class ViewController: UIViewController,
         "GET: URL encoded paramters",
         "POST: URL encoded paramters",
         "JSON encoded paramters"
+    ],[
+        "custom headers"
+    ],[
+        "response validation"
+    ],[
+        "response handler",
+        "response data handler",
+        "response string handler",
+        "response decodable handler"
     ]]
 
     override func viewDidLoad() {
@@ -30,6 +40,9 @@ class ViewController: UIViewController,
         // Do any additional setup after loading the view.
         
         view.addSubview(tableView)
+        
+        let item = UIBarButtonItem(barButtonSystemItem: .add, target: self, action: #selector(makeRequestOfLejian))
+        navigationItem.rightBarButtonItem = item
     }
     
     lazy var tableView: UITableView = {
@@ -83,6 +96,33 @@ class ViewController: UIViewController,
             default:
                 debugPrint("")
             }
+        case 2:
+            switch indexPath.row {
+            case 0:
+                makeRequestWithCustomHeaders()
+            default:
+                debugPrint("")
+            }
+        case 3:
+            switch indexPath.row {
+            case 0:
+                makeRequestWithResponseValidation()
+            default:
+                debugPrint("")
+            }
+        case 4:
+            switch indexPath.row {
+            case 0:
+                makeRequestWithResponseHandler()
+            case 1:
+                makeRequestWithResponseDataHandler()
+            case 2:
+                makeRequestWithResponseStringHandler()
+            case 3:
+                makeRequestWithResponseDecodableHandler()
+            default:
+                debugPrint("")
+            }
         default:
             debugPrint("")
         }
@@ -95,11 +135,62 @@ class ViewController: UIViewController,
             return "request with url"
         case 1:
             return "parameters encode"
+        case 2:
+            return "headers"
+        case 3:
+            return "response validation"
+        case 4:
+            return "response handler"
         default:
             return "request"
         }
     }
 
+}
+
+// 模仿乐见请求
+extension ViewController {
+    
+    /// 乐见请求公共参数是，version和pcode。Header中还有公共验证参数TK，如果登录的情况下，还有ssotk。验证参数TK逻辑见乐见。
+    @objc func makeRequestOfLejian() {
+        let url = "https://api.leseee.com/v1/wz/zxzq/baseinfo"
+        let pcode = "210210000"
+        let version = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? ""
+        let params = ["pcode": pcode, "version": version];
+        let headers: HTTPHeaders = ["TK": self.lejianTK(url: url, params: params)]
+        AF.request(url, parameters: params, headers: headers)
+            .validate()
+            .responseString { response in
+                if let data = response.value {
+                    debugPrint(data)
+                }
+            }
+    }
+    
+    func lejianTK(url: String, params: [String: String]) -> String {
+        guard let urlObject = URL(string: url) else { return "" }
+        let request = URLRequest(url: urlObject)
+        if let r = try? URLEncodedFormParameterEncoder.default.encode(params, into: request), let query = r.url?.query {
+            let ts = "1634118283"
+            let s = "zCezLmB8o76lk\(ts)\(query)"
+            let tk = "\(s.md5).\(ts)"
+            return tk
+        }
+        
+        return ""
+    }
+}
+
+extension String {
+    var md5: String {
+        let data = Data(self.utf8)
+        let hash = data.withUnsafeBytes { (bytes: UnsafeRawBufferPointer) -> [UInt8] in
+            var hash = [UInt8](repeating: 0, count: Int(CC_MD5_DIGEST_LENGTH))
+            CC_MD5(bytes.baseAddress, CC_LONG(data.count), &hash)
+            return hash
+        }
+        return hash.map { String(format: "%02x", $0) }.joined()
+    }
 }
 
 // make request
@@ -108,6 +199,10 @@ extension ViewController {
     struct ParamsModel: Codable {
         let name: String
         let age: Int
+    }
+    
+    struct ResponseModel: Codable {
+        let name: String
     }
     
     /// make request with url string, not URLRequestConvertible.
@@ -172,6 +267,65 @@ extension ViewController {
                 if let httpBody = $0.request?.httpBody {
                     let string = String(data: httpBody, encoding: .utf8)
                     debugPrint("httpbody: \(string ?? "")")
+                }
+            }
+    }
+    
+    func makeRequestWithCustomHeaders() {
+        let headers: HTTPHeaders = ["TK": "fidfajhufejdfslifj"]
+        AF.request(baseURL, headers: headers)
+            .response {
+                debugPrint($0)
+            }
+    }
+    
+    func makeRequestWithResponseValidation() {
+        AF.request(baseURL)
+            .validate(statusCode: 300...400)
+            .responseData {
+                debugPrint($0)
+            }
+    }
+    
+    func makeRequestWithResponseHandler() {
+        AF.request(baseURL)
+            .response {
+                debugPrint($0)
+            }
+    }
+    
+    func makeRequestWithResponseDataHandler() {
+        AF.request(baseURL)
+            .responseData {
+                switch $0.result {
+                case .success(let data):
+                    debugPrint("data will be: \(data)")
+                case .failure(let error):
+                    debugPrint(error)
+                }
+            }
+    }
+    
+    func makeRequestWithResponseStringHandler() {
+        AF.request(baseURL)
+            .responseString {
+                switch $0.result {
+                case .success(let string):
+                    debugPrint("string will be: \(string)")
+                case .failure(let error):
+                    debugPrint(error)
+                }
+            }
+    }
+    
+    func makeRequestWithResponseDecodableHandler() {
+        AF.request(baseURL)
+            .responseDecodable(of: ResponseModel.self) {
+                switch $0.result {
+                case .success(let object):
+                    debugPrint("object will be: \(object)")
+                case .failure(let error):
+                    debugPrint(error)
                 }
             }
     }
